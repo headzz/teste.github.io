@@ -1,38 +1,323 @@
 <!doctype html>
-<html>
+<html lang="en">
   <head>
-    <title>HTML File</title>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>WebAuthn Fingerprint Authentication Demo</title>
+    <style>
+      body {
+        font-family:
+          -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu,
+          Cantarell, sans-serif;
+        max-width: 600px;
+        margin: 50px auto;
+        padding: 20px;
+        background: #f5f5f5;
+      }
+      .container {
+        background: white;
+        padding: 30px;
+        border-radius: 10px;
+        box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+      }
+      h1 {
+        color: #333;
+        margin-bottom: 10px;
+      }
+      .subtitle {
+        color: #666;
+        margin-bottom: 30px;
+      }
+      button {
+        background: #007bff;
+        color: white;
+        border: none;
+        padding: 12px 24px;
+        border-radius: 5px;
+        cursor: pointer;
+        font-size: 16px;
+        margin: 10px 5px;
+        transition: background 0.3s;
+      }
+      button:hover {
+        background: #0056b3;
+      }
+      button:disabled {
+        background: #ccc;
+        cursor: not-allowed;
+      }
+      .register-btn {
+        background: #28a745;
+      }
+      .register-btn:hover {
+        background: #218838;
+      }
+      .status {
+        margin-top: 20px;
+        padding: 15px;
+        border-radius: 5px;
+        display: none;
+      }
+      .status.success {
+        background: #d4edda;
+        color: #155724;
+        border: 1px solid #c3e6cb;
+        display: block;
+      }
+      .status.error {
+        background: #f8d7da;
+        color: #721c24;
+        border: 1px solid #f5c6cb;
+        display: block;
+      }
+      .status.info {
+        background: #d1ecf1;
+        color: #0c5460;
+        border: 1px solid #bee5eb;
+        display: block;
+      }
+      .credential-info {
+        background: #f8f9fa;
+        padding: 15px;
+        border-radius: 5px;
+        margin-top: 20px;
+        font-family: monospace;
+        font-size: 12px;
+        word-break: break-all;
+      }
+      .step {
+        margin: 20px 0;
+        padding: 15px;
+        background: #f8f9fa;
+        border-left: 4px solid #007bff;
+        border-radius: 4px;
+      }
+      .step h3 {
+        margin-top: 0;
+        color: #007bff;
+      }
+    </style>
   </head>
   <body>
-    <p>test on it</p>
+    <div class="container">
+      <h1>🔐 WebAuthn Fingerprint Demo</h1>
+      <p class="subtitle">
+        Test fingerprint authentication using Web Authentication API
+      </p>
+
+      <div class="step">
+        <h3>Step 1: Register</h3>
+        <p>Create a new credential using your fingerprint or security key</p>
+        <button class="register-btn" onclick="registerCredential()">
+          Register New Credential
+        </button>
+      </div>
+
+      <div class="step">
+        <h3>Step 2: Authenticate</h3>
+        <p>
+          Use navigator.credentials.get() to authenticate with your fingerprint
+        </p>
+        <button onclick="authenticateWithFingerprint()" id="authBtn" disabled>
+          Authenticate with Fingerprint
+        </button>
+      </div>
+
+      <div id="status" class="status"></div>
+      <div
+        id="credentialInfo"
+        class="credential-info"
+        style="display: none"
+      ></div>
+    </div>
+
     <script>
-      async function triggerFingerprintAuth() {
-        // 1. Challenge from server (simplified)
-        const challenge = new Uint8Array(32);
-        window.crypto.getRandomValues(challenge);
+      let storedCredentialId = null;
 
-        // 2. Options for the authentication ceremony
-        const publicKeyCredentialRequestOptions = {
-          challenge: challenge,
-          rpId: window.location.hostname, // e.g., "example.com"
-          userVerification: "required", // "required" triggers biometrics
-          allowCredentials: [], // Optional: restrict to specific registered keys
-        };
+      // Helper function to convert ArrayBuffer to Base64
+      function arrayBufferToBase64(buffer) {
+        const bytes = new Uint8Array(buffer);
+        let binary = "";
+        for (let i = 0; i < bytes.byteLength; i++) {
+          binary += String.fromCharCode(bytes[i]);
+        }
+        return window.btoa(binary);
+      }
 
+      // Helper function to convert Base64 to ArrayBuffer
+      function base64ToArrayBuffer(base64) {
+        const binary = window.atob(base64);
+        const bytes = new Uint8Array(binary.length);
+        for (let i = 0; i < binary.length; i++) {
+          bytes[i] = binary.charCodeAt(i);
+        }
+        return bytes.buffer;
+      }
+
+      // Show status message
+      function showStatus(message, type) {
+        const statusDiv = document.getElementById("status");
+        statusDiv.textContent = message;
+        statusDiv.className = `status ${type}`;
+      }
+
+      // Show credential information
+      function showCredentialInfo(info) {
+        const infoDiv = document.getElementById("credentialInfo");
+        infoDiv.textContent = JSON.stringify(info, null, 2);
+        infoDiv.style.display = "block";
+      }
+
+      // Check WebAuthn support
+      if (!window.PublicKeyCredential) {
+        showStatus("⚠️ WebAuthn is not supported in this browser", "error");
+      } else {
+        showStatus(
+          "✅ WebAuthn is supported! You can register and authenticate.",
+          "success",
+        );
+      }
+
+      // Step 1: Register a new credential
+      async function registerCredential() {
         try {
-          // 3. Trigger the browser's native biometric prompt
+          showStatus(
+            "📱 Please use your fingerprint or security key...",
+            "info",
+          );
+
+          // Generate a random challenge
+          const challenge = new Uint8Array(32);
+          window.crypto.getRandomValues(challenge);
+
+          // Generate a random user ID
+          const userId = new Uint8Array(16);
+          window.crypto.getRandomValues(userId);
+
+          const publicKeyCredentialCreationOptions = {
+            challenge: challenge,
+            rp: {
+              name: "WebAuthn Demo",
+              id: window.location.hostname,
+            },
+            user: {
+              id: userId,
+              name: "demo@example.com",
+              displayName: "Demo User",
+            },
+            pubKeyCredParams: [
+              { alg: -7, type: "public-key" }, // ES256
+              { alg: -257, type: "public-key" }, // RS256
+            ],
+            authenticatorSelection: {
+              authenticatorAttachment: "platform", // Prefer built-in authenticators (fingerprint)
+              requireResidentKey: false,
+              userVerification: "preferred",
+            },
+            timeout: 60000,
+            attestation: "none",
+          };
+
+          // Create credential using navigator.credentials.create()
+          const credential = await navigator.credentials.create({
+            publicKey: publicKeyCredentialCreationOptions,
+          });
+
+          // Store the credential ID for later authentication
+          storedCredentialId = arrayBufferToBase64(credential.rawId);
+          localStorage.setItem("webauthn_credential_id", storedCredentialId);
+
+          showStatus(
+            "✅ Registration successful! You can now authenticate.",
+            "success",
+          );
+          document.getElementById("authBtn").disabled = false;
+
+          showCredentialInfo({
+            credentialId: storedCredentialId,
+            type: credential.type,
+            authenticatorAttachment: credential.authenticatorAttachment,
+          });
+        } catch (error) {
+          showStatus(`❌ Registration failed: ${error.message}`, "error");
+          console.error("Registration error:", error);
+        }
+      }
+
+      // Step 2: Authenticate using navigator.credentials.get()
+      async function authenticateWithFingerprint() {
+        try {
+          // Retrieve stored credential ID
+          const credentialId = localStorage.getItem("webauthn_credential_id");
+          if (!credentialId) {
+            showStatus(
+              "❌ No credential found. Please register first.",
+              "error",
+            );
+            return;
+          }
+
+          showStatus(
+            "📱 Please use your fingerprint to authenticate...",
+            "info",
+          );
+
+          // Generate a new challenge for authentication
+          const challenge = new Uint8Array(32);
+          window.crypto.getRandomValues(challenge);
+
+          const publicKeyCredentialRequestOptions = {
+            challenge: challenge,
+            allowCredentials: [
+              {
+                id: base64ToArrayBuffer(credentialId),
+                type: "public-key",
+                transports: ["internal", "usb", "nfc", "ble"],
+              },
+            ],
+            timeout: 60000,
+            userVerification: "preferred",
+          };
+
+          // THIS IS THE KEY PART: navigator.credentials.get()
           const assertion = await navigator.credentials.get({
             publicKey: publicKeyCredentialRequestOptions,
           });
 
-          // 4. Send assertion to server for verification
-          console.log("Success, user verified!", assertion);
-        } catch (err) {
-          console.error("Error or user cancelled:", err);
+          showStatus(
+            "✅ Authentication successful! Fingerprint verified.",
+            "success",
+          );
+
+          // Display authentication details
+          showCredentialInfo({
+            credentialId: arrayBufferToBase64(assertion.rawId),
+            authenticatorData: arrayBufferToBase64(
+              assertion.response.authenticatorData,
+            ),
+            signature: arrayBufferToBase64(assertion.response.signature),
+            userHandle: assertion.response.userHandle
+              ? arrayBufferToBase64(assertion.response.userHandle)
+              : null,
+          });
+        } catch (error) {
+          showStatus(`❌ Authentication failed: ${error.message}`, "error");
+          console.error("Authentication error:", error);
         }
       }
 
-      setTimeout(triggerFingerprintAuth, 2000);
+      // Check if credential already exists
+      window.addEventListener("load", () => {
+        const credentialId = localStorage.getItem("webauthn_credential_id");
+        if (credentialId) {
+          storedCredentialId = credentialId;
+          document.getElementById("authBtn").disabled = false;
+          showStatus(
+            "✅ Found existing credential. You can authenticate now.",
+            "success",
+          );
+        }
+      });
     </script>
   </body>
 </html>
