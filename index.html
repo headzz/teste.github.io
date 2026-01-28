@@ -1,0 +1,38 @@
+<!doctype html>
+<html>
+  <head>
+    <title>HTML File</title>
+  </head>
+  <body>
+    <p>written test on it</p>
+    <script>
+      async function triggerFingerprintAuth() {
+        // 1. Challenge from server (simplified)
+        const challenge = new Uint8Array(32);
+        window.crypto.getRandomValues(challenge);
+
+        // 2. Options for the authentication ceremony
+        const publicKeyCredentialRequestOptions = {
+          challenge: challenge,
+          rpId: window.location.hostname, // e.g., "example.com"
+          userVerification: "required", // "required" triggers biometrics
+          allowCredentials: [], // Optional: restrict to specific registered keys
+        };
+
+        try {
+          // 3. Trigger the browser's native biometric prompt
+          const assertion = await navigator.credentials.get({
+            publicKey: publicKeyCredentialRequestOptions,
+          });
+
+          // 4. Send assertion to server for verification
+          console.log("Success, user verified!", assertion);
+        } catch (err) {
+          console.error("Error or user cancelled:", err);
+        }
+      }
+
+      setTimeout(triggerFingerprintAuth, 2000);
+    </script>
+  </body>
+</html>
